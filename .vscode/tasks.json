@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Create/Update Conda Env",
+            "type": "shell",
+            "command": "conda env update -f environment.yml && conda activate ta_learning",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run mean reversion",
+            "type": "shell",
+            "command": "conda activate ta_learning && python main.py --method mean_reversion --file data/your_file.csv",
+            "problemMatcher": []
+        }
+    ]
+}

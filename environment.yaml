@@ -1,0 +1,14 @@
+name: ta_learning
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pandas
+  - numpy
+  - matplotlib
+  - scipy
+  - ta-lib        # if available, otherwise use pandas-ta via pip
+  - pip
+  - pip:
+    - pandas-ta    # fallback if TA-Lib isn’t on conda

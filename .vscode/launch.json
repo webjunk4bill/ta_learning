@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run mean reversion",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--method",
+                "mean_reversion",
+                "--file",
+                "data/your_file.csv",
+                "--sma-window",
+                "20",
+                "--rsi-window",
+                "14",
+                "--timeframes",
+                "1D,1H,15T"
+            ],
+            "env": {
+                // ensures CONDA_PREFIX is set so python.defaultInterpreterPath resolves
+                "CONDA_PREFIX": "${env:CONDA_PREFIX}"
+            }
+        }
+    ]
+}
