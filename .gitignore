@@ -1,1 +1,5 @@
 .DS_Store
+core/__pycache__/*
+core/indicators/__pycache__/
+core/__pycache__/
+core/methods/__pycache__/

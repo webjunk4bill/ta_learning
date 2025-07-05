@@ -1,0 +1,22 @@
+# config.yaml
+general:
+  file:   data/binance_btc_minute.csv
+  symbol: BTC
+  start_date: 2025-01-01
+  end_date:   2025-01-31
+  multi_tf:   true
+
+single_tf:
+  timeframes: ["1D", "1H", "15T"]
+  sma_window: 20
+  rsi_window: 14
+  oversold:   30.0
+  overbought: 70.0
+
+multi_tf:
+  trend_sma_window: 100
+  zone_rsi_window:  14
+  zone_oversold:    30.0
+  zone_overbought:  70.0
+  bb_window: 20
+  bb_sigma:  2.0
