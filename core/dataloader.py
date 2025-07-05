@@ -22,5 +22,6 @@ def resample_df(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         'Close': 'last',
         'Volume': 'sum'
     }
+    df = df.sort_index()
     df_resampled = df.resample(timeframe).agg(ohlc).dropna()  # type: ignore[arg-type]
     return df_resampled
