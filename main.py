@@ -19,7 +19,7 @@ def parse_args():
 def main():
     args = parse_args()
     raw_df = load_data(args.file)
-    for tf in args.timeframes.split(","):
+    for tf in [t.strip() for t in args.timeframes.split(",") if t.strip()]:
         df_tf = resample_df(raw_df, tf)
         result = analyze(
             df_tf,
