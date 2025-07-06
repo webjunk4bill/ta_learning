@@ -1,6 +1,7 @@
 # main.py
 import argparse
 import yaml
+from rich.console import Console
 from core.dataloader import load_data, resample_df
 from core.methods.mean_reversion import analyze
 from core.methods.multi_mean_reversion import (
@@ -10,6 +11,10 @@ from core.methods.multi_mean_reversion import (
     multi_tf_filter,
 )
 from core.visualizer import plot_signals, plot_multi_tf
+from core.logger import init_logger
+from loguru import logger
+
+console = Console()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Technical Analysis Learning CLI")
@@ -21,19 +26,24 @@ def parse_args():
     return parser.parse_args()
 
 def main():
+    init_logger()
+    console.print("[bold green]Starting analysis...[/bold green]")
     args = parse_args()
     # Load configuration
     with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
+    logger.info("Loaded config from {}", args.config)
     gen = cfg["general"]
     stf = cfg["single_tf"]
     mtf = cfg["multi_tf"]
 
     # Load and optionally filter data
+    logger.info("Loading data range {start} to {end}", start=gen["start_date"], end=gen["end_date"])
     raw_df = load_data(gen["file"])
     raw_df = raw_df.loc[gen["start_date"] : gen["end_date"]]
 
     if gen.get("multi_tf"):
+        logger.info("Running multi-timeframe analysis")
         # Multi-timeframe pipeline
         daily_df  = resample_df(raw_df, "1D")
         hourly_df = resample_df(raw_df, "1H")
@@ -53,8 +63,10 @@ def main():
 
         plot_multi_tf(daily_df, hourly_df, m15_df, symbol=gen["symbol"])
     else:
+        logger.info("Running single-timeframe analysis")
         # Single-timeframe loop
         for tf in stf["timeframes"]:
+            logger.debug(f"Processing timeframe {tf}")
             df_tf = resample_df(raw_df, tf)
             result = analyze(
                 df_tf,
@@ -64,6 +76,8 @@ def main():
                 overbought=stf["overbought"],
             )
             plot_signals(result, symbol=gen["symbol"], timeframe=tf)
+
+    logger.success("Analysis complete")
 
 if __name__ == "__main__":
     main()
