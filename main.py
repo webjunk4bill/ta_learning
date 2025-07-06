@@ -10,6 +10,7 @@ from core.methods.multi_mean_reversion import (
     multi_tf_filter,
 )
 from core.visualizer import plot_signals, plot_multi_tf
+from core.backtest import backtest_signals
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Technical Analysis Learning CLI")
@@ -50,8 +51,9 @@ def main():
         )
         m15_df    = trigger(m15_df)
         m15_df    = multi_tf_filter(m15_df, hourly_df, daily_df)
+        equity = backtest_signals(m15_df)
+        plot_multi_tf(daily_df, hourly_df, m15_df, equity=equity, symbol=gen["symbol"])
 
-        plot_multi_tf(daily_df, hourly_df, m15_df, symbol=gen["symbol"])
     else:
         # Single-timeframe loop
         for tf in stf["timeframes"]:

@@ -64,6 +64,7 @@ def plot_multi_tf(
     daily_df,
     hourly_df,
     m15_df,
+    equity=None,
     symbol: str = ""
 ):
     """
@@ -79,12 +80,17 @@ def plot_multi_tf(
         m15_df   : DataFrame containing columns ['Close', 'signal'].
         symbol   : Ticker symbol for chart title.
     """
+    # Determine number of rows: add equity row if provided
+    has_equity = equity is not None
+    n_rows = 4 if has_equity else 3
+    height_ratios = [1, 1, 2] + ([1] if has_equity else [])
+
     fig, axes = plt.subplots(
-        3,
+        n_rows,
         1,
-        figsize=(14, 10),
+        figsize=(14, 12 if has_equity else 10),
         sharex=True,
-        gridspec_kw={"height_ratios": [1, 1, 2]},
+        gridspec_kw={"height_ratios": height_ratios},
     )
 
     # ------------------ Daily trend ------------------
@@ -161,8 +167,11 @@ def plot_multi_tf(
         ax2.plot(m15_df.index, m15_df[up_col], color="grey", linewidth=0.8, alpha=0.7, label="Upper BB")
         ax2.plot(m15_df.index, m15_df[lo_col], color="grey", linewidth=0.8, alpha=0.7, label="Lower BB")
 
-    longs = m15_df["signal"] == 1
-    shorts = m15_df["signal"] == -1
+    entry = m15_df.get("entry_signal", m15_df["signal"])
+    longs = entry == 1
+    shorts = entry == -1
+    double_longs = m15_df.get("double_down", 0) == 2
+    double_shorts = m15_df.get("double_down", 0) == -2
 
     ax2.scatter(
         m15_df[longs].index,
@@ -178,9 +187,56 @@ def plot_multi_tf(
         color="red",
         label="Short entry",
     )
-    ax2.set_title("15‑Minute Entries (Filtered)")
+    # Scale-in markers
+    ax2.scatter(
+        m15_df[double_longs].index,
+        m15_df[double_longs]["Close"],
+        marker="o",
+        color="blue",
+        label="Scale-in long",
+    )
+    ax2.scatter(
+        m15_df[double_shorts].index,
+        m15_df[double_shorts]["Close"],
+        marker="o",
+        color="orange",
+        label="Scale-in short",
+    )
+    ax2.set_title("15‑Minute Entries (Filtered & Scaled)")
     ax2.legend()
     ax2.grid(True)
+
+    # ------------------ Equity curve ------------------
+    if has_equity:
+        ax3 = axes[3]
+        ax3.plot(equity.index, equity, label="Equity")
+        # Mark buy and sell on equity curve
+        buys_eq = equity[m15_df["signal"] == 1]
+        sells_eq = equity[m15_df["signal"] == -1]
+        ax3.scatter(buys_eq.index, buys_eq.values, marker="^", color="green", label="Buy", zorder=3)
+        ax3.scatter(sells_eq.index, sells_eq.values, marker="v", color="red", label="Sell", zorder=3)
+        # Scale-in markers on equity
+        double_longs_eq = equity[m15_df["double_down"] == 2]
+        double_shorts_eq = equity[m15_df["double_down"] == -2]
+        ax3.scatter(
+            double_longs_eq.index,
+            double_longs_eq.values,
+            marker="o",
+            color="blue",
+            label="Scale-in Buy",
+            zorder=3
+        )
+        ax3.scatter(
+            double_shorts_eq.index,
+            double_shorts_eq.values,
+            marker="o",
+            color="orange",
+            label="Scale-in Sell",
+            zorder=3
+        )
+        ax3.set_title("Equity Curve")
+        ax3.grid(True)
+        ax3.legend()
 
     plt.tight_layout()
     plt.show()

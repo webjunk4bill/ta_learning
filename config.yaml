@@ -19,4 +19,4 @@ multi_tf:
   zone_oversold:    30.0
   zone_overbought:  70.0
   bb_window: 20
-  bb_sigma:  2.0
+  bb_sigma:  2.5

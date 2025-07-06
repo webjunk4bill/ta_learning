@@ -137,4 +137,36 @@ def multi_tf_filter(
 
     m15_df.loc[~valid_mask, "signal"] = 0
     m15_df.loc[~valid_mask, "reason"] = ""  # clear reasons for filtered signals
+    # Entry signal: only on signal changes
+    m15_df["entry_signal"] = (
+        (m15_df["signal"] != m15_df["signal"].shift(1))
+        & (m15_df["signal"] != 0)
+    ).astype(int) * m15_df["signal"]
+
+    # Double-down signal: scaling into positions on extended drawdowns
+    # Compute the entry price for each open position
+    m15_df["entry_price"] = m15_df["Close"].where(m15_df["entry_signal"] != 0).ffill()
+
+    # Define a threshold for scaling in (e.g., 1% adverse move)
+    threshold = 0.01
+
+    # Identify double-down conditions:
+    # For longs: post-entry price drops below entry_price by threshold
+    dd_long = (
+        (m15_df["signal"] == 1)  # still in a long trade
+        & (m15_df["Close"] < m15_df["entry_price"] * (1 - threshold))
+        & (m15_df["entry_signal"] == 0)  # not the initial entry bar
+    )
+    # For shorts: post-entry price rises above entry_price by threshold
+    dd_short = (
+        (m15_df["signal"] == -1)
+        & (m15_df["Close"] > m15_df["entry_price"] * (1 + threshold))
+        & (m15_df["entry_signal"] == 0)
+    )
+
+    # Create a double_down column:  2 for long scale-in, -2 for short scale-in, 0 otherwise
+    m15_df["double_down"] = 0
+    m15_df.loc[dd_long, "double_down"] = 2
+    m15_df.loc[dd_short, "double_down"] = -2
+
     return m15_df
