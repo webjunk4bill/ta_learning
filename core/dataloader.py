@@ -25,6 +25,13 @@ def resample_df(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     Resample a minute-level DataFrame to the specified timeframe (e.g., '1D', '1H', '15T').
     Aggregates OHLC and sums Volume.
     """
+    # Normalize deprecated frequency aliases: 'H'→'h', 'T'→'min'
+    timeframe_norm = timeframe
+    if timeframe_norm.endswith(("H", "h")):
+        timeframe_norm = timeframe_norm[:-1] + "h"  # e.g., '1H' → '1h'
+    elif timeframe_norm.endswith(("T", "t")):
+        timeframe_norm = timeframe_norm[:-1] + "min"  # e.g., '15T' → '15min'
+
     ohlc: Dict[str, Any] = {
         'Open': 'first',
         'High': 'max',
@@ -34,5 +41,5 @@ def resample_df(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     }
     logger.debug(f"Resampling to {timeframe}")
     df = df.sort_index()
-    df_resampled = df.resample(timeframe).agg(ohlc).dropna()  # type: ignore[arg-type]
+    df_resampled = df.resample(timeframe_norm).agg(ohlc).dropna()  # type: ignore[arg-type]
     return df_resampled
