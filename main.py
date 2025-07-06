@@ -13,6 +13,11 @@ from core.methods.multi_mean_reversion import (
 from core.visualizer import plot_signals, plot_multi_tf
 from core.logger import init_logger
 from loguru import logger
+import sys
+
+# Reconfigure Loguru to emit INFO+ logs to standard error
+logger.remove()
+logger.add(sys.stderr, level="INFO", format="<green>{time:HH:mm:ss}</green> | <level>{message}</level>")
 from core.backtest import backtest_signals
 
 console = Console()

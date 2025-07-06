@@ -19,7 +19,7 @@ from core.methods.mean_reversion import analyze as trigger_analyze
 from core.indicators.moving_averages import sma
 from core.indicators.rsi import rsi
 from core.indicators.bbands import bollinger
-
+from loguru import logger
 
 # ---------------------------------------------------------------------------
 # Daily‑level TREND
@@ -123,30 +123,63 @@ def multi_tf_filter(
     Returns:
         Filtered 15‑minute dataframe with invalid signals set to 0.
     """
-    # Forward‑fill daily & hourly context to 15‑minute index
-    daily_trend = daily_df["trend"].reindex(m15_df.index, method="ffill")
-    hourly_zone = hourly_df["zone"].reindex(m15_df.index, method="ffill")
+    logger.info("multi_tf_filter start: {} rows", len(m15_df))
 
-    # Validity masks
-    long_ok = (daily_trend == 1) & (hourly_zone == "oversold")
-    short_ok = (daily_trend == -1) & (hourly_zone == "overbought")
-
-    valid_mask = ((m15_df["signal"] == 1) & long_ok) | (
-        (m15_df["signal"] == -1) & short_ok
-    )
-
-    m15_df.loc[~valid_mask, "signal"] = 0
-    m15_df.loc[~valid_mask, "reason"] = ""  # clear reasons for filtered signals
     # Entry signal: only on signal changes
     m15_df["entry_signal"] = (
         (m15_df["signal"] != m15_df["signal"].shift(1))
         & (m15_df["signal"] != 0)
     ).astype(int) * m15_df["signal"]
+    entry_idxs = m15_df.index[m15_df["entry_signal"] != 0].tolist()
+    logger.info("Entry signals at indices: {}", entry_idxs)
 
-    # Double-down signal: scaling into positions on extended drawdowns
     # Compute the entry price for each open position
     m15_df["entry_price"] = m15_df["Close"].where(m15_df["entry_signal"] != 0).ffill()
 
+    # -----------------------------------------------------------------------
+    # Exit based on hourly SMA middle band or ±2% profit
+    # Align hourly SMA to 15-min index
+    hr_sma_cols = [c for c in hourly_df.columns if c.startswith("SMA_")]
+    # Fallback to Bollinger middle band if no SMA present
+    if not hr_sma_cols:
+        hr_sma_cols = [c for c in hourly_df.columns if c.startswith("BB_M_")]
+    if hr_sma_cols:
+        hr_sma = hourly_df[hr_sma_cols[0]].reindex(m15_df.index, method="ffill")
+        prev_pos = m15_df["signal"].shift(1)
+
+        # Long exits: cross above hourly SMA or +2% gain
+        exit_bb_long     = (prev_pos ==  1) & (m15_df["Close"] >= hr_sma)
+        exit_profit_long = (prev_pos ==  1) & (m15_df["Close"] >= m15_df["entry_price"] * 1.02)
+
+        # Short exits: cross below hourly SMA or -2% gain
+        exit_bb_short     = (prev_pos == -1) & (m15_df["Close"] <= hr_sma)
+        exit_profit_short = (prev_pos == -1) & (m15_df["Close"] <= m15_df["entry_price"] * 0.98)
+
+        # Combine exit conditions
+        exit_mask = exit_bb_long | exit_profit_long | exit_bb_short | exit_profit_short
+        exit_idxs = m15_df.index[exit_mask].tolist()
+        logger.info("Exit signals at indices: {}", exit_idxs)
+
+        m15_df.loc[exit_mask, "signal"] = 0
+        m15_df.loc[exit_mask, "reason"] = "Exit at hourly SMA or ±2% target"
+    # -----------------------------------------------------------------------
+
+    # Forward-fill hourly context to 15‑minute index
+    hourly_zone = hourly_df["zone"].reindex(m15_df.index, method="ffill")
+
+    # Validity mask based solely on hourly zone
+    valid_mask = (
+        (m15_df["signal"] == 1) & (hourly_zone == "oversold")
+    ) | (
+        (m15_df["signal"] == -1) & (hourly_zone == "overbought")
+    )
+    filtered_count = (~valid_mask).sum()
+    logger.info("Filtered {} signals by hourly zone", int(filtered_count))
+
+    m15_df.loc[~valid_mask, "signal"] = 0
+    m15_df.loc[~valid_mask, "reason"] = ""  # clear reasons for filtered signals
+
+    # Double-down signal: scaling into positions on extended drawdowns
     # Define a threshold for scaling in (e.g., 1% adverse move)
     threshold = 0.01
 
@@ -168,5 +201,9 @@ def multi_tf_filter(
     m15_df["double_down"] = 0
     m15_df.loc[dd_long, "double_down"] = 2
     m15_df.loc[dd_short, "double_down"] = -2
+    dd_long_idxs = m15_df.index[m15_df["double_down"] == 2].tolist()
+    dd_short_idxs = m15_df.index[m15_df["double_down"] == -2].tolist()
+    logger.info("Double-down long at: {}", dd_long_idxs)
+    logger.info("Double-down short at: {}", dd_short_idxs)
 
     return m15_df

@@ -202,6 +202,32 @@ def plot_multi_tf(
         color="orange",
         label="Scale-in short",
     )
+    # Annotate entry and exit points
+    for idx, row in m15_df.iterrows():
+        # Entry annotation
+        if row.get("entry_signal", 0) != 0:
+            ax2.annotate(
+                "Entry",
+                (idx, row["Close"]),
+                textcoords="offset points",
+                xytext=(0, 10),
+                ha="center",
+                fontsize=8,
+                color="green"
+            )
+
+        # Exit annotation based on reason
+        reason = row.get("reason", "")
+        if reason.startswith("Exit"):
+            ax2.annotate(
+                "Exit",
+                (idx, row["Close"]),
+                textcoords="offset points",
+                xytext=(0, -10),
+                ha="center",
+                fontsize=8,
+                color="red"
+            )
     ax2.set_title("15‑Minute Entries (Filtered & Scaled)")
     ax2.legend()
     ax2.grid(True)
@@ -237,6 +263,13 @@ def plot_multi_tf(
         ax3.set_title("Equity Curve")
         ax3.grid(True)
         ax3.legend()
+
+    # Shade periods when in trade
+    in_trade = m15_df["signal"].replace(0, method="ffill").fillna(0) != 0
+    # Convert index to numeric positions for fill_between
+    dates = m15_df.index
+    ax2.fill_between(dates, m15_df["Close"].min(), m15_df["Close"].max(),
+                     where=in_trade, color="grey", alpha=0.1)
 
     plt.tight_layout()
     plt.show()

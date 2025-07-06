@@ -2,7 +2,7 @@
 general:
   file:   data/binance_btc_minute.csv
   symbol: BTC
-  start_date: 2025-01-01
+  start_date: 2025-01-15
   end_date:   2025-01-31
   multi_tf:   true
 
