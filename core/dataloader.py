@@ -1,11 +1,13 @@
 import pandas as pd
 from typing import Dict, Any
+from loguru import logger
 
 def load_data(path: str) -> pd.DataFrame:
     """
     Load CSV data from the given path, parse dates, and set the first column as the index.
     Expects CSV with a datetime index column (e.g., 'Date') and columns: Open, High, Low, Close, Volume.
     """
+    logger.debug(f"Loading data from {path}")
     # Read CSV; expect columns 'date', 'price', 'volume', or standard OHLCV
     df = pd.read_csv(path, parse_dates=['date'])
     df = df.rename(columns={'date': 'Date', 'price': 'Close', 'volume': 'Volume'})
@@ -37,6 +39,7 @@ def resample_df(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         'Close': 'last',
         'Volume': 'sum'
     }
+    logger.debug(f"Resampling to {timeframe}")
     df = df.sort_index()
     df_resampled = df.resample(timeframe_norm).agg(ohlc).dropna()  # type: ignore[arg-type]
     return df_resampled
