@@ -14,3 +14,4 @@ dependencies:
     - pandas-ta    # fallback if TA-Lib isn’t on conda
     - rich
     - loguru
+    - pyyaml
