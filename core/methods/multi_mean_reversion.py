@@ -147,8 +147,8 @@ def multi_tf_filter(
     position = 0
     entry_price = None
     size = 0
-    entry_idxs = []
-    exit_idxs = []
+    entry_idxs: list[pd.Timestamp] = []
+    exit_idxs: list[pd.Timestamp] = []
     threshold = 0.01
 
     for idx, row in m15_df.iterrows():
@@ -163,15 +163,10 @@ def multi_tf_filter(
         elif raw_sig == -1 and dir_trend == -1 and zone == "overbought":
             valid_entry = -1
 
-        if position == 0:
-            if valid_entry != 0:
-                position = valid_entry
-                entry_price = price
-                size = 1
-                m15_df.at[idx, "entry_signal"] = position
-                entry_idxs.append(idx)
-        else:
-            # Check exit conditions
+        # --------------------
+        # Exit logic first
+        # --------------------
+        if position != 0:
             exit_bb = False
             if not pd.isna(hr_sma.loc[idx]):
                 exit_bb = price >= hr_sma.loc[idx] if position == 1 else price <= hr_sma.loc[idx]
@@ -183,24 +178,40 @@ def multi_tf_filter(
                 size = 0
                 exit_idxs.append(idx)
                 m15_df.at[idx, "reason"] = "Exit at hourly SMA or ±2% target"
+
+        # --------------------
+        # Entry / scaling logic
+        # --------------------
+        if position == 0:
+            if valid_entry != 0:
+                position = valid_entry
+                entry_price = price
+                size = 1
+                m15_df.at[idx, "entry_signal"] = position
+                entry_idxs.append(idx)
+        else:
+            if valid_entry == position:
+                size += 1
+                entry_price = (entry_price * (size - 1) + price) / size
+                m15_df.at[idx, "double_down"] = 2 if position == 1 else -2
             else:
-                if valid_entry == position:
+                if position == 1 and price < entry_price * (1 - threshold):
                     size += 1
                     entry_price = (entry_price * (size - 1) + price) / size
-                    m15_df.at[idx, "double_down"] = 2 if position == 1 else -2
-                else:
-                    if position == 1 and price < entry_price * (1 - threshold):
-                        size += 1
-                        entry_price = (entry_price * (size - 1) + price) / size
-                        m15_df.at[idx, "double_down"] = 2
-                    elif position == -1 and price > entry_price * (1 + threshold):
-                        size += 1
-                        entry_price = (entry_price * (size - 1) + price) / size
-                        m15_df.at[idx, "double_down"] = -2
+                    m15_df.at[idx, "double_down"] = 2
+                elif position == -1 and price > entry_price * (1 + threshold):
+                    size += 1
+                    entry_price = (entry_price * (size - 1) + price) / size
+                    m15_df.at[idx, "double_down"] = -2
 
         m15_df.at[idx, "signal"] = position
         if entry_price is not None:
             m15_df.at[idx, "entry_price"] = entry_price
+
+    # Force close any open position at end of data
+    if position != 0:
+        exit_idxs.append(m15_df.index[-1])
+        m15_df.at[m15_df.index[-1], "reason"] = "Exit end-of-data"
 
     logger.info("Entry signals at indices: {}", entry_idxs)
     logger.info("Exit signals at indices: {}", exit_idxs)
