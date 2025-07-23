@@ -12,6 +12,9 @@ from core.backtest import backtest_signals
 
 def run_strategy(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Run trading strategy based on configuration."""
+    if config.get("strategy") == "passthrough_only":
+        return df[["timestamp", "Open", "High", "Low", "Close", "Volume"]].copy()
+
     gen = config.get("general", {})
     stf = config.get("single_tf", {})
     mtf = config.get("multi_tf", {})
@@ -49,4 +52,7 @@ def run_strategy(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             )
             res["Timeframe"] = tf
             results.append(res)
+            print(results)
+            if not results:
+                raise ValueError("Strategy generated no output — check input data or strategy logic.")
         return pd.concat(results)
