@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from core.news import fetch_latest_news
 from ta_engine.data import load_price_data
 from ta_engine.live_data import fetch_ohlcv
 from ta_engine.strategies import run_strategy
@@ -53,6 +54,15 @@ def run_strategy_api(req: StrategyRequest):
         result = run_strategy(df, req.config)
         return result.to_dict(orient="records")
 
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/news")
+def get_news():
+    """Return recent news headlines from CryptoPanic."""
+    try:
+        return fetch_latest_news(20)
     except Exception as e:
         return {"error": str(e)}
 

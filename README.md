@@ -54,3 +54,13 @@ Run the FastAPI server to expose strategy endpoints:
 ```bash
 uvicorn server.app:app --reload
 ```
+
+### News endpoint
+
+The `/news` route aggregates recent headlines from CryptoPanic for BTC and
+ETH.  Ensure a `CRYPTOPANIC_API_KEY` is available in a `.env` file before
+running:
+
+```bash
+curl http://localhost:8000/news
+```
