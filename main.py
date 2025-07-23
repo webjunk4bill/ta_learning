@@ -2,18 +2,16 @@
 import argparse
 import yaml
 from rich.console import Console
-from core.dataloader import load_data, resample_df
-from core.methods.mean_reversion import analyze
-from core.methods.multi_mean_reversion import (
-    trend_analyze,
-    zone_analyze,
-    trigger,
-    multi_tf_filter,
-)
-from core.visualizer import plot_signals, plot_multi_tf
-from core.logger import init_logger
 from loguru import logger
-from core.backtest import backtest_signals
+
+from core.visualizer import plot_multi_tf
+from core.logger import init_logger
+from core.dataloader import resample_df
+
+from ta_engine.data import load_price_data
+from ta_engine.strategies import run_strategy
+from ta_engine.plotting import plot_signals
+from core.methods.multi_mean_reversion import trend_analyze, zone_analyze
 
 console = Console()
 
@@ -40,44 +38,38 @@ def main():
 
     # Load and optionally filter data
     logger.info("Loading data range {start} to {end}", start=gen["start_date"], end=gen["end_date"])
-    raw_df = load_data(gen["file"])
+    raw_df = load_price_data(gen["file"])
     raw_df = raw_df.loc[gen["start_date"] : gen["end_date"]]
 
-    if gen.get("multi_tf"):
-        logger.info("Running multi-timeframe analysis")
-        # Multi-timeframe pipeline
-        daily_df  = resample_df(raw_df, "1D")
-        hourly_df = resample_df(raw_df, "1H")
-        m15_df    = resample_df(raw_df, "15T")
+    result = run_strategy(raw_df, cfg)
 
-        daily_df  = trend_analyze(daily_df, sma_window=mtf["trend_sma_window"])
+    if gen.get("multi_tf"):
+        # result is 15-minute dataframe with Equity column
+        equity = result.pop("Equity")
+        daily_df = trend_analyze(
+            resample_df(raw_df, "1D"),
+            sma_window=mtf["trend_sma_window"],
+        )
         hourly_df = zone_analyze(
-            hourly_df,
+            resample_df(raw_df, "1H"),
             rsi_window=mtf["zone_rsi_window"],
             rsi_oversold=mtf["zone_oversold"],
             rsi_overbought=mtf["zone_overbought"],
             bb_window=mtf["bb_window"],
             bb_sigma=mtf["bb_sigma"],
         )
-        m15_df    = trigger(m15_df)
-        m15_df    = multi_tf_filter(m15_df, hourly_df, daily_df)
-        equity = backtest_signals(m15_df)
-        plot_multi_tf(daily_df, hourly_df, m15_df, equity=equity, symbol=gen["symbol"])
-
+        plot_multi_tf(
+            daily_df,
+            hourly_df,
+            result,
+            equity=equity,
+            symbol=gen["symbol"],
+        )
     else:
-        logger.info("Running single-timeframe analysis")
-        # Single-timeframe loop
-        for tf in stf["timeframes"]:
-            logger.debug(f"Processing timeframe {tf}")
-            df_tf = resample_df(raw_df, tf)
-            result = analyze(
-                df_tf,
-                sma_window=stf["sma_window"],
-                rsi_window=stf["rsi_window"],
-                oversold=stf["oversold"],
-                overbought=stf["overbought"],
-            )
-            plot_signals(result, symbol=gen["symbol"], timeframe=tf)
+        timeframes = result["Timeframe"].unique()
+        for tf in timeframes:
+            df_tf = result[result["Timeframe"] == tf]
+            plot_signals(df_tf, df_tf["signal"]) 
 
     logger.success("Analysis complete")
 
