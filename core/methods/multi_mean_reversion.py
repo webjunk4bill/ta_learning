@@ -16,9 +16,7 @@ import numpy as np
 from core.methods.mean_reversion import analyze as trigger_analyze
 
 # Indicator helpers
-from core.indicators.moving_averages import sma
-from core.indicators.rsi import rsi
-from core.indicators.bbands import bollinger
+from core.indicators import sma, rsi, bollinger
 
 
 # ---------------------------------------------------------------------------
