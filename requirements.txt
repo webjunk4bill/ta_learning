@@ -6,3 +6,4 @@ rich
 loguru
 fastapi
 uvicorn
+ccxt
