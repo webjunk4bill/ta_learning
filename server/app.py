@@ -5,6 +5,7 @@ from ta_engine.data import load_price_data
 from ta_engine.live_data import fetch_ohlcv
 from ta_engine.strategies import run_strategy
 from core.indicators import compute_indicators
+import numpy as np
 
 app = FastAPI()
 
@@ -90,12 +91,23 @@ def compute_indicators_api(req: IndicatorRequest):
         )
 
         indicators = compute_indicators(df, req.indicators)
+        
+        def replace_nans(obj):
+            if isinstance(obj, dict):
+                return {k: replace_nans(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [replace_nans(v) for v in obj]
+            elif isinstance(obj, float) and np.isnan(obj):
+                return None
+            return obj
+
+        safe_indicators = replace_nans(indicators)
+
         return {
             "symbol": req.symbol,
             "exchange": req.exchange,
-            "indicators": indicators,
+            "indicators": safe_indicators,
         }
 
     except Exception as e:
         return {"error": str(e)}
-

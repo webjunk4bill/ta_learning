@@ -4,3 +4,4 @@ core/__pycache__/
 core/methods/__pycache__/
 server/__pycache__
 ta_engine/__pycache__
+core/indicators/__pycache__
