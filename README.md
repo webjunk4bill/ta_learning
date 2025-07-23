@@ -46,3 +46,11 @@ enabled.
 Feel free to edit this file or provide your own when running the script.
 
 
+
+## API Server
+
+Run the FastAPI server to expose strategy endpoints:
+
+```bash
+uvicorn server.app:app --reload
+```
