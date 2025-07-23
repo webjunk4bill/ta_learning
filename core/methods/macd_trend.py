@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from core.indicators.macd import macd
+from core.indicators import macd
 
 
 def analyze(

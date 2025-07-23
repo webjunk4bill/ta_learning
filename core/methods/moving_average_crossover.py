@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from core.indicators.moving_averages import sma
+from core.indicators import sma
 
 
 def analyze(

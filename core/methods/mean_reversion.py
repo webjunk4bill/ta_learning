@@ -1,6 +1,5 @@
 import pandas as pd
-from core.indicators.moving_averages import sma
-from core.indicators.rsi import rsi
+from core.indicators import sma, rsi
 
 def analyze(
     df: pd.DataFrame,
