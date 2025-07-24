@@ -5,6 +5,7 @@ from ta_engine.data import load_price_data
 from ta_engine.live_data import fetch_ohlcv
 from ta_engine.strategies import run_strategy
 from core.indicators import compute_indicators
+from core.signals import timeframe_summary
 import numpy as np
 
 app = FastAPI()
@@ -23,6 +24,14 @@ class IndicatorRequest(BaseModel):
     symbol: str
     exchange: str
     resolution: str = "1h"
+    indicators: dict
+    limit: int | None = 200
+
+
+class SummarySignalRequest(BaseModel):
+    symbol: str
+    exchange: str
+    resolutions: dict
     indicators: dict
     limit: int | None = 200
 
@@ -55,6 +64,36 @@ def run_strategy_api(req: StrategyRequest):
         result = run_strategy(df, req.config)
         return result.to_dict(orient="records")
 
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/summary_signal")
+def summary_signal(req: SummarySignalRequest):
+    try:
+        results = {}
+        for name, tf in req.resolutions.items():
+            live_df = fetch_ohlcv(
+                req.symbol,
+                req.exchange,
+                timeframe=tf,
+                limit=req.limit or 200,
+            )
+            df = (
+                live_df.rename(
+                    columns={
+                        "open": "Open",
+                        "high": "High",
+                        "low": "Low",
+                        "close": "Close",
+                        "volume": "Volume",
+                        "date": "Date",
+                    }
+                ).set_index("Date")
+            )
+            results[name] = timeframe_summary(df, req.indicators)
+
+        return results
     except Exception as e:
         return {"error": str(e)}
 
