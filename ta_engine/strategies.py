@@ -10,7 +10,7 @@ from core.methods.multi_mean_reversion import (
 from core.backtest import backtest_signals
 
 
-def run_strategy(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+def run_strategy(df: pd.DataFrame, config: dict, debug: bool = False) -> pd.DataFrame:
     """Run trading strategy based on configuration."""
     if config.get("strategy") == "passthrough_only":
         return df[["timestamp", "Open", "High", "Low", "Close", "Volume"]].copy()

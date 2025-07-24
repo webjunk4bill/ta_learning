@@ -1,11 +1,11 @@
-"""Logging setup using Loguru with Rich formatting."""
+"""Logging setup using Loguru."""
 
+import sys
 from loguru import logger
-from rich.logging import RichHandler
 
 
-def init_logger(level: str = "INFO") -> None:
-    """Configure Loguru to use RichHandler."""
+def init_logger(debug: bool = False) -> None:
+    """Configure Loguru based on debug flag."""
     logger.remove()
-    logger.add(RichHandler(markup=True, rich_tracebacks=True), level=level)
+    logger.add(sys.stderr, level="DEBUG" if debug else "INFO")
 

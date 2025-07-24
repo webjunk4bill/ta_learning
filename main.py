@@ -25,23 +25,26 @@ def parse_args():
     return parser.parse_args()
 
 def main():
-    init_logger()
     console.print("[bold green]Starting analysis...[/bold green]")
     args = parse_args()
     # Load configuration
     with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
-    logger.info("Loaded config from {}", args.config)
+
     gen = cfg["general"]
     stf = cfg["single_tf"]
     mtf = cfg["multi_tf"]
+
+    init_logger(debug=gen.get("debug", False))
+    debug = gen.get("debug", False)
+    logger.info("Loaded config from {}", args.config)
 
     # Load and optionally filter data
     logger.info("Loading data range {start} to {end}", start=gen["start_date"], end=gen["end_date"])
     raw_df = load_price_data(gen["file"])
     raw_df = raw_df.loc[gen["start_date"] : gen["end_date"]]
 
-    result = run_strategy(raw_df, cfg)
+    result = run_strategy(raw_df, cfg, debug=debug)
 
     if gen.get("multi_tf"):
         # result is 15-minute dataframe with Equity column
