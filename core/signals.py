@@ -7,7 +7,7 @@ from .indicators import rsi, macd, bollinger
 Signal = Dict[str, Any]
 
 
-def _rsi_signal(df: pd.DataFrame, window: int = 14) -> Signal:
+def _rsi_signal(df: pd.DataFrame, window: int = 14, debug: bool = False) -> Signal:
     df = rsi(df.copy(), window=window)
     value = df[f"RSI_{window}"].iloc[-1]
     if value < 30:
@@ -18,28 +18,32 @@ def _rsi_signal(df: pd.DataFrame, window: int = 14) -> Signal:
         confidence = min((value - 70) / 30, 1.0)
     else:
         signal = "neutral"
-        confidence = 1 - abs(value - 50) / 50
+        confidence = 0.5
+    if debug:
+        print(f"RSI={value:.2f} → Signal={signal}, Confidence={confidence:.2f}")
     return {"method": "RSI", "signal": signal, "confidence": round(float(confidence), 2)}
 
 
-def _macd_signal(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> Signal:
+def _macd_signal(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9, debug: bool = False) -> Signal:
     df = macd(df.copy(), fast=fast, slow=slow, signal=signal)
     hist = df["MACD_hist"].iloc[-1]
-    max_hist = df["MACD_hist"].abs().max()
-    max_hist = max_hist if max_hist != 0 else 1
+    recent = df["MACD_hist"].tail(20)
+    max_recent = max(abs(recent.max()), abs(recent.min()), 1e-6)
     if hist > 0:
         sig = "long"
-        confidence = min(abs(hist) / max_hist, 1.0)
+        confidence = min(abs(hist) / max_recent, 1.0)
     elif hist < 0:
         sig = "short"
-        confidence = min(abs(hist) / max_hist, 1.0)
+        confidence = min(abs(hist) / max_recent, 1.0)
     else:
         sig = "neutral"
         confidence = 0.0
+    if debug:
+        print(f"MACD histogram={hist:.5f} → Signal={sig}, Confidence={confidence:.2f}")
     return {"method": "MACD", "signal": sig, "confidence": round(float(confidence), 2)}
 
 
-def _bollinger_signal(df: pd.DataFrame, window: int = 20, std_dev: float = 2.0) -> Signal:
+def _bollinger_signal(df: pd.DataFrame, window: int = 20, std_dev: float = 2.0, debug: bool = False) -> Signal:
     df = bollinger(df.copy(), window=window, n_sigma=std_dev)
     close = df["Close"].iloc[-1]
     upper = df[f"BB_U_{window}"].iloc[-1]
@@ -54,16 +58,19 @@ def _bollinger_signal(df: pd.DataFrame, window: int = 20, std_dev: float = 2.0) 
     else:
         sig = "neutral"
         mid = (upper + lower) / 2
-        confidence = 1 - abs(close - mid) / (width / 2)
+        confidence = max(1 - abs(close - mid) / (width / 2), 0.4)
+        confidence = min(confidence, 0.6)
+    if debug:
+        print(f"Close={close:.2f}, Lower={lower:.2f}, Upper={upper:.2f} → Signal={sig}, Confidence={confidence:.2f}")
     return {"method": "Bollinger", "signal": sig, "confidence": round(float(confidence), 2)}
 
 
-def indicator_signals(df: pd.DataFrame, config: Dict[str, Any]) -> List[Signal]:
+def indicator_signals(df: pd.DataFrame, config: Dict[str, Any], debug: bool = False) -> List[Signal]:
     """Compute signals for each indicator defined in config."""
     results: List[Signal] = []
     if "rsi" in config:
         window = config["rsi"].get("window", 14)
-        results.append(_rsi_signal(df, window=window))
+        results.append(_rsi_signal(df, window=window, debug=debug))
     if "macd" in config:
         mc = config["macd"]
         results.append(
@@ -72,6 +79,7 @@ def indicator_signals(df: pd.DataFrame, config: Dict[str, Any]) -> List[Signal]:
                 fast=mc.get("fast", 12),
                 slow=mc.get("slow", 26),
                 signal=mc.get("signal", 9),
+                debug=debug,
             )
         )
     if "bollinger" in config:
@@ -81,6 +89,7 @@ def indicator_signals(df: pd.DataFrame, config: Dict[str, Any]) -> List[Signal]:
                 df,
                 window=bc.get("window", 20),
                 std_dev=bc.get("std_dev", 2.0),
+                debug=debug,
             )
         )
     return results
@@ -91,11 +100,14 @@ def _summarize(details: List[Signal]) -> Tuple[str, float]:
     if not details:
         return "neutral", 0.0
 
-    sign_map = {"long": 1, "short": -1, "neutral": 0}
-    weighted = sum(sign_map[d["signal"]] * d["confidence"] for d in details)
-    total_conf = sum(d["confidence"] for d in details)
-    if total_conf == 0:
-        return "neutral", 0.0
+    sign_map = {"long": 1, "short": -1}
+    directional = [d for d in details if d["signal"] in sign_map]
+    if not directional:
+        return "neutral", 0.5
+
+    weighted = sum(sign_map[d["signal"]] * d["confidence"] for d in directional)
+    total_conf = sum(d["confidence"] for d in directional)
+
     score = weighted / total_conf
     if score > 0.1:
         summary = "long"
