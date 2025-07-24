@@ -5,6 +5,7 @@ general:
   start_date: 2025-01-01
   end_date:   2025-01-31
   multi_tf:   true
+  debug: true
 
 single_tf:
   timeframes: ["1D", "1H", "15T"]

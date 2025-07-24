@@ -1,6 +1,8 @@
 import pandas as pd
 from typing import Dict, Any, List, Tuple
 
+from loguru import logger
+
 from .indicators import rsi, macd, bollinger
 
 
@@ -20,7 +22,9 @@ def _rsi_signal(df: pd.DataFrame, window: int = 14, debug: bool = False) -> Sign
         signal = "neutral"
         confidence = 0.5
     if debug:
-        print(f"RSI={value:.2f} → Signal={signal}, Confidence={confidence:.2f}")
+        logger.debug(
+            f"RSI={value:.2f} → Signal={signal}, Confidence={confidence:.2f}"
+        )
     return {"method": "RSI", "signal": signal, "confidence": round(float(confidence), 2)}
 
 
@@ -39,7 +43,9 @@ def _macd_signal(df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int =
         sig = "neutral"
         confidence = 0.0
     if debug:
-        print(f"MACD histogram={hist:.5f} → Signal={sig}, Confidence={confidence:.2f}")
+        logger.debug(
+            f"MACD histogram={hist:.5f} → Signal={sig}, Confidence={confidence:.2f}"
+        )
     return {"method": "MACD", "signal": sig, "confidence": round(float(confidence), 2)}
 
 
@@ -61,7 +67,9 @@ def _bollinger_signal(df: pd.DataFrame, window: int = 20, std_dev: float = 2.0, 
         confidence = max(1 - abs(close - mid) / (width / 2), 0.4)
         confidence = min(confidence, 0.6)
     if debug:
-        print(f"Close={close:.2f}, Lower={lower:.2f}, Upper={upper:.2f} → Signal={sig}, Confidence={confidence:.2f}")
+        logger.debug(
+            f"Close={close:.2f}, Lower={lower:.2f}, Upper={upper:.2f} → Signal={sig}, Confidence={confidence:.2f}"
+        )
     return {"method": "Bollinger", "signal": sig, "confidence": round(float(confidence), 2)}
 
 
@@ -118,7 +126,9 @@ def _summarize(details: List[Signal]) -> Tuple[str, float]:
     return summary, round(abs(score), 2)
 
 
-def timeframe_summary(df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
-    details = indicator_signals(df, config)
+def timeframe_summary(
+    df: pd.DataFrame, config: Dict[str, Any], debug: bool = False
+) -> Dict[str, Any]:
+    details = indicator_signals(df, config, debug=debug)
     summary, conf = _summarize(details)
     return {"summary": summary, "confidence": conf, "details": details}
