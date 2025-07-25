@@ -1,6 +1,9 @@
 import requests
 import json
 
+from core.logger import init_logger
+init_logger(debug=True)
+
 payload = {
     "symbol": "BTC/USDT",
     "exchange": "binanceus",

@@ -11,6 +11,16 @@ import numpy as np
 
 _ENV_FILE = ".env"
 
+# --- Load config and initialize logger ---
+import yaml
+from core.logger import init_logger
+
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+debug = config.get("general", {}).get("debug", False)
+init_logger(debug=debug)
+print(f"DEBUG MODE: {debug}")
 
 def _read_env_var(key: str) -> str | None:
     """Read a single variable from the local .env file."""
@@ -30,6 +40,7 @@ def verify_api_key(x_api_key: str = Header(...)):
     if not API_KEY or x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+        
 app = FastAPI()
 
 
@@ -115,7 +126,7 @@ def summary_signal(req: SummarySignalRequest, x_api_key: str = Header(...)):
                     }
                 ).set_index("Date")
             )
-            results[name] = timeframe_summary(df, req.indicators)
+            results[name] = timeframe_summary(df, req.indicators, debug=debug)
 
         return results
     except Exception as e:
