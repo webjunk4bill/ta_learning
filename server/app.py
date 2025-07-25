@@ -8,6 +8,17 @@ from core.indicators import compute_indicators
 from core.signals import timeframe_summary
 import numpy as np
 
+# --- Load config and initialize logger ---
+import yaml
+from core.logger import init_logger
+
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+debug = config.get("general", {}).get("debug", False)
+init_logger(debug=debug)
+print(f"DEBUG MODE: {debug}")
+
 app = FastAPI()
 
 
@@ -91,7 +102,7 @@ def summary_signal(req: SummarySignalRequest):
                     }
                 ).set_index("Date")
             )
-            results[name] = timeframe_summary(df, req.indicators)
+            results[name] = timeframe_summary(df, req.indicators, debug=debug)
 
         return results
     except Exception as e:
