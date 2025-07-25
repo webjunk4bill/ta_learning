@@ -1,5 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
+import os
 from core.news import fetch_latest_news
 from ta_engine.data import load_price_data
 from ta_engine.live_data import fetch_ohlcv
@@ -7,6 +8,8 @@ from ta_engine.strategies import run_strategy
 from core.indicators import compute_indicators
 from core.signals import timeframe_summary
 import numpy as np
+
+_ENV_FILE = ".env"
 
 # --- Load config and initialize logger ---
 import yaml
@@ -19,6 +22,25 @@ debug = config.get("general", {}).get("debug", False)
 init_logger(debug=debug)
 print(f"DEBUG MODE: {debug}")
 
+def _read_env_var(key: str) -> str | None:
+    """Read a single variable from the local .env file."""
+    if os.path.exists(_ENV_FILE):
+        with open(_ENV_FILE) as f:
+            for line in f:
+                if line.strip().startswith(f"{key}="):
+                    return line.strip().split("=", 1)[1]
+    return None
+
+
+# Load API key once at startup
+API_KEY = os.getenv("API_KEY") or _read_env_var("API_KEY")
+
+
+def verify_api_key(x_api_key: str = Header(...)):
+    if not API_KEY or x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+        
 app = FastAPI()
 
 
@@ -48,7 +70,8 @@ class SummarySignalRequest(BaseModel):
 
 
 @app.post("/run_strategy")
-def run_strategy_api(req: StrategyRequest):
+def run_strategy_api(req: StrategyRequest, x_api_key: str = Header(...)):
+    verify_api_key(x_api_key)
     try:
         if req.symbol and req.exchange:
             live_df = fetch_ohlcv(
@@ -80,7 +103,8 @@ def run_strategy_api(req: StrategyRequest):
 
 
 @app.post("/summary_signal")
-def summary_signal(req: SummarySignalRequest):
+def summary_signal(req: SummarySignalRequest, x_api_key: str = Header(...)):
+    verify_api_key(x_api_key)
     try:
         results = {}
         for name, tf in req.resolutions.items():
@@ -110,7 +134,8 @@ def summary_signal(req: SummarySignalRequest):
 
 
 @app.get("/news")
-def get_news():
+def get_news(x_api_key: str = Header(...)):
+    verify_api_key(x_api_key)
     """Return recent news headlines from CryptoPanic."""
     try:
         return fetch_latest_news(20)
@@ -119,7 +144,8 @@ def get_news():
 
 
 @app.post("/compute_indicators")
-def compute_indicators_api(req: IndicatorRequest):
+def compute_indicators_api(req: IndicatorRequest, x_api_key: str = Header(...)):
+    verify_api_key(x_api_key)
     try:
         live_df = fetch_ohlcv(
             req.symbol,

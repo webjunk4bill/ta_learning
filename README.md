@@ -55,6 +55,14 @@ Run the FastAPI server to expose strategy endpoints:
 uvicorn server.app:app --reload
 ```
 
+All endpoints require an API key. Create a `.env` file alongside the
+application and define your keys:
+
+```bash
+API_KEY=your-secret-key
+CRYPTOPANIC_API_KEY=your-news-api-key
+```
+
 ### News endpoint
 
 The `/news` route aggregates recent headlines from CryptoPanic for BTC and
