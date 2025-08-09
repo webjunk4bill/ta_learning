@@ -9,7 +9,7 @@ from core.logger import init_logger
 from core.dataloader import resample_df
 
 from ta_engine.data import load_price_data
-from ta_engine.strategies import run_strategy
+from ta_engine.legacy_strategies import run_strategy
 from ta_engine.plotting import plot_signals
 from core.methods.multi_mean_reversion import trend_analyze, zone_analyze
 
