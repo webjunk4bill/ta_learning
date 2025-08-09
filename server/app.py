@@ -244,7 +244,8 @@ def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
     return df.tail(limit).to_dict(orient="records")
 
 
-# Custom OpenAPI schema with public Render URL
+
+# Custom OpenAPI schema with public Render URL and API key security
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -254,8 +255,32 @@ def custom_openapi():
         description="Signals, indicators, OHLCV, and news endpoints for TA Learning.",
         routes=app.routes,
     )
-    # Add your public base URL so tools importing the spec know where to send requests
+
+    # Set public base URL so tools know where to send requests
     schema["servers"] = [{"url": "https://ta-learning.onrender.com"}]
+
+    # Ensure components exist
+    schema.setdefault("components", {})
+    schema["components"].setdefault("securitySchemes", {})
+
+    # Declare API Key auth in header x-api-key
+    schema["components"]["securitySchemes"]["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Include your API key in the x-api-key header"
+    }
+
+    # Apply security globally (protected endpoints)
+    schema["security"] = [{"ApiKeyAuth": []}]
+
+    # Explicitly exempt unprotected endpoints
+    paths = schema.get("paths", {})
+    for path, methods in paths.items():
+        for method, op in methods.items():
+            if path in ("/ping", "/version"):
+                op["security"] = []
+
     app.openapi_schema = schema
     return app.openapi_schema
 
