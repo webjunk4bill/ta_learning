@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, Security, HTTPException, status
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 import os
@@ -45,7 +45,7 @@ API_KEY = (
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
 
 
-def verify_api_key(x_api_key: str = Depends(api_key_header)):
+def verify_api_key(x_api_key: str = Security(api_key_header)):
     if not API_KEY or x_api_key != API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
@@ -255,32 +255,8 @@ def custom_openapi():
         description="Signals, indicators, OHLCV, and news endpoints for TA Learning.",
         routes=app.routes,
     )
-
     # Set public base URL so tools know where to send requests
     schema["servers"] = [{"url": "https://ta-learning.onrender.com"}]
-
-    # Ensure components exist
-    schema.setdefault("components", {})
-    schema["components"].setdefault("securitySchemes", {})
-
-    # Declare API Key auth in header x-api-key
-    schema["components"]["securitySchemes"]["ApiKeyAuth"] = {
-        "type": "apiKey",
-        "in": "header",
-        "name": "x-api-key",
-        "description": "Include your API key in the x-api-key header"
-    }
-
-    # Apply security globally (protected endpoints)
-    schema["security"] = [{"ApiKeyAuth": []}]
-
-    # Explicitly exempt unprotected endpoints
-    paths = schema.get("paths", {})
-    for path, methods in paths.items():
-        for method, op in methods.items():
-            if path in ("/ping", "/version"):
-                op["security"] = []
-
     app.openapi_schema = schema
     return app.openapi_schema
 
