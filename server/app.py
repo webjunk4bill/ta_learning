@@ -187,3 +187,9 @@ def compute_indicators_api(req: IndicatorRequest, x_api_key: str = Header(...)):
 
     except Exception as e:
         return {"error": str(e)}
+
+
+# Health check endpoint
+@app.get("/ping")
+def ping():
+    return {"status": "ok"}
