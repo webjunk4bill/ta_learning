@@ -5,7 +5,7 @@ import os
 from core.news import fetch_latest_news
 from ta_engine.data import load_price_data
 from ta_engine.live_data import fetch_ohlcv
-from ta_engine.strategies import run_strategy
+from ta_engine.strategies.registry import get_strategy
 from core.indicators import compute_indicators
 from core.signals import timeframe_summary
 import numpy as np
@@ -148,9 +148,7 @@ class SummarySignalRequest(BaseModel):
 
 @app.post("/run_strategy", dependencies=[Depends(verify_api_key)])
 def run_strategy_api(req: StrategyRequest):
-    """
-    Run a strategy on live OHLCV (via CCXT) or a local CSV (if filepath is provided). Returns per-candle outputs based on the supplied strategy config.
-    """
+    """Run a strategy and return per-candle outputs."""
     try:
         if req.symbol and req.exchange:
             live_df = fetch_ohlcv(
@@ -163,11 +161,14 @@ def run_strategy_api(req: StrategyRequest):
         else:
             df = load_price_data(req.filepath)
 
-        result = run_strategy(df, req.config)
-        return result.to_dict(orient="records")
+        strat = get_strategy(req.config.get("strategy"))
+        result_df = strat.run(df, req.config)
+        return result_df.reset_index().to_dict(orient="records")
 
     except Exception as e:
-        return {"error": str(e)}
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 @app.post("/summary_signal", dependencies=[Depends(verify_api_key)])
