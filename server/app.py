@@ -9,6 +9,8 @@ from ta_engine.strategies import run_strategy
 from core.indicators import compute_indicators
 from core.signals import timeframe_summary
 import numpy as np
+import pandas as pd
+from loguru import logger
 
 _ENV_FILE = ".env"
 
@@ -22,6 +24,70 @@ with open("config.yaml", "r") as f:
 debug = config.get("general", {}).get("debug", False)
 init_logger(debug=debug)
 print(f"DEBUG MODE: {debug}")
+
+# --- Helper: Robust OHLCV normalization ---
+def normalize_prices_df(df: pd.DataFrame, context: str = "") -> pd.DataFrame:
+    """Normalize a raw OHLCV DataFrame into columns [Date, Open, High, Low, Close, Volume] with UTC Date index.
+    Handles common variations for timestamp and column casing. Raises a clear error if essentials are missing.
+    """
+    try:
+        if debug:
+            logger.debug(f"[normalize] context={context} incoming_cols={list(df.columns)}")
+
+        # Build a mapping of lowercase name -> original column name
+        lower_map = {c.lower(): c for c in df.columns}
+
+        # Detect timestamp column
+        ts_col = None
+        for cand in ("date", "datetime", "timestamp"):
+            if cand in lower_map:
+                ts_col = lower_map[cand]
+                break
+        if ts_col is None:
+            raise ValueError("Missing timestamp column: expected one of ['date','datetime','timestamp']")
+
+        ts = df[ts_col]
+        # Convert to UTC datetime
+        if pd.api.types.is_integer_dtype(ts) or pd.api.types.is_float_dtype(ts):
+            # Heuristic: ms vs s
+            sample = float(ts.iloc[-1]) if len(ts) else 0.0
+            unit = "ms" if sample > 1e12 else "s"
+            dt = pd.to_datetime(ts, unit=unit, utc=True)
+        else:
+            dt = pd.to_datetime(ts, utc=True, errors="coerce")
+
+        if dt.isna().all():
+            raise ValueError("Timestamp conversion failed: all NaT after parsing")
+
+        # Detect price/volume columns
+        def need(name: str) -> str:
+            if name in lower_map:
+                return lower_map[name]
+            raise ValueError(f"Missing required column: {name}")
+
+        o_col = need("open")
+        h_col = need("high")
+        l_col = need("low")
+        c_col = need("close")
+        v_col = need("volume")
+
+        out = pd.DataFrame({
+            "Date": dt,
+            "Open": pd.to_numeric(df[o_col], errors="coerce"),
+            "High": pd.to_numeric(df[h_col], errors="coerce"),
+            "Low": pd.to_numeric(df[l_col], errors="coerce"),
+            "Close": pd.to_numeric(df[c_col], errors="coerce"),
+            "Volume": pd.to_numeric(df[v_col], errors="coerce"),
+        })
+        out = out.dropna(subset=["Date"]).sort_values("Date").set_index("Date")
+
+        if debug:
+            logger.debug(f"[normalize] context={context} mapped={{'open': o_col, 'high': h_col, 'low': l_col, 'close': c_col, 'volume': v_col, 'ts': ts_col}} rows={len(out)} range=({out.index.min()}, {out.index.max()})")
+
+        return out
+    except Exception as e:
+        logger.error(f"[normalize] context={context} failed: {e}")
+        raise
 
 def _read_env_var(key: str) -> str | None:
     """Read a single variable from the local .env file."""
@@ -93,18 +159,7 @@ def run_strategy_api(req: StrategyRequest):
                 timeframe=req.resolution or "1h",
                 limit=req.limit or 200,
             )
-            df = (
-                live_df.rename(
-                    columns={
-                        "open": "Open",
-                        "high": "High",
-                        "low": "Low",
-                        "close": "Close",
-                        "volume": "Volume",
-                        "date": "Date",
-                    }
-                ).set_index("Date")
-            )
+            df = normalize_prices_df(live_df, context="run_strategy")
         else:
             df = load_price_data(req.filepath)
 
@@ -129,18 +184,7 @@ def summary_signal(req: SummarySignalRequest):
                 timeframe=tf,
                 limit=req.limit or 200,
             )
-            df = (
-                live_df.rename(
-                    columns={
-                        "open": "Open",
-                        "high": "High",
-                        "low": "Low",
-                        "close": "Close",
-                        "volume": "Volume",
-                        "date": "Date",
-                    }
-                ).set_index("Date")
-            )
+            df = normalize_prices_df(live_df, context=f"summary_signal:{name}")
             results[name] = timeframe_summary(df, req.indicators, debug=debug)
 
         return results
@@ -171,18 +215,7 @@ def compute_indicators_api(req: IndicatorRequest):
             timeframe=req.resolution or "1h",
             limit=req.limit or 200,
         )
-        df = (
-            live_df.rename(
-                columns={
-                    "open": "Open",
-                    "high": "High",
-                    "low": "Low",
-                    "close": "Close",
-                    "volume": "Volume",
-                    "date": "Date",
-                }
-            ).set_index("Date")
-        )
+        df = normalize_prices_df(live_df, context="compute_indicators")
 
         indicators = compute_indicators(df, req.indicators)
         
@@ -240,8 +273,13 @@ def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
     """
     Fetch recent OHLCV candles from the specified exchange via CCXT and return the latest rows as an array of records.
     """
-    df = fetch_ohlcv(symbol, exchange, timeframe=resolution, limit=limit)
-    return df.tail(limit).to_dict(orient="records")
+    try:
+        # Pass strict=False to fetch_ohlcv for this endpoint
+        raw = fetch_ohlcv(symbol, exchange, timeframe=resolution, limit=limit, strict=False)
+        df = normalize_prices_df(raw, context="ohlcv")
+        return df.tail(limit).to_dict(orient="records")
+    except Exception as e:
+        return {"error": str(e)}
 
 
 

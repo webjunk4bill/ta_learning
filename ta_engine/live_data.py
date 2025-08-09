@@ -5,7 +5,7 @@ import ccxt
 import pandas as pd
 
 
-def fetch_ohlcv(symbol: str, exchange_name: str, timeframe: str = "1h", limit: int = 200) -> pd.DataFrame:
+def fetch_ohlcv(symbol: str, exchange_name: str, timeframe: str = "1h", limit: int = 200, strict: bool = True) -> pd.DataFrame:
     try:
         exchange_class = getattr(ccxt, exchange_name)
         exchange = exchange_class()
@@ -18,7 +18,12 @@ def fetch_ohlcv(symbol: str, exchange_name: str, timeframe: str = "1h", limit: i
         )
         df["date"] = pd.to_datetime(df["timestamp"], unit="ms")
 
-        if df.empty or df.shape[0] < 10:
+        if df.empty:
+            raise ValueError(
+                f"Received no data from {exchange_name} for {symbol} (0 rows)"
+            )
+
+        if strict and df.shape[0] < 10:
             raise ValueError(
                 f"Received insufficient data from {exchange_name} for {symbol} ({df.shape[0]} rows)"
             )
