@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 import os
 from core.news import fetch_latest_news
@@ -33,12 +34,22 @@ def _read_env_var(key: str) -> str | None:
 
 
 # Load API key once at startup
-API_KEY = os.getenv("API_KEY") or _read_env_var("API_KEY")
+API_KEY = (
+    os.getenv("API_KEY")
+    or os.getenv("GPT_API_KEY")
+    or _read_env_var("API_KEY")
+    or config.get("security", {}).get("api_key", "")
+)
 
 
-def verify_api_key(x_api_key: str = Header(...)):
+api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+
+
+def verify_api_key(x_api_key: str = Depends(api_key_header)):
     if not API_KEY or x_api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
+        )
 
         
 app = FastAPI()
@@ -69,9 +80,8 @@ class SummarySignalRequest(BaseModel):
     limit: int | None = 200
 
 
-@app.post("/run_strategy")
-def run_strategy_api(req: StrategyRequest, x_api_key: str = Header(...)):
-    verify_api_key(x_api_key)
+@app.post("/run_strategy", dependencies=[Depends(verify_api_key)])
+def run_strategy_api(req: StrategyRequest):
     try:
         if req.symbol and req.exchange:
             live_df = fetch_ohlcv(
@@ -102,9 +112,8 @@ def run_strategy_api(req: StrategyRequest, x_api_key: str = Header(...)):
         return {"error": str(e)}
 
 
-@app.post("/summary_signal")
-def summary_signal(req: SummarySignalRequest, x_api_key: str = Header(...)):
-    verify_api_key(x_api_key)
+@app.post("/summary_signal", dependencies=[Depends(verify_api_key)])
+def summary_signal(req: SummarySignalRequest):
     try:
         results = {}
         for name, tf in req.resolutions.items():
@@ -133,9 +142,8 @@ def summary_signal(req: SummarySignalRequest, x_api_key: str = Header(...)):
         return {"error": str(e)}
 
 
-@app.get("/news")
-def get_news(x_api_key: str = Header(...)):
-    verify_api_key(x_api_key)
+@app.get("/news", dependencies=[Depends(verify_api_key)])
+def get_news():
     """Return recent news headlines from CryptoPanic."""
     try:
         return fetch_latest_news(20)
@@ -143,9 +151,8 @@ def get_news(x_api_key: str = Header(...)):
         return {"error": str(e)}
 
 
-@app.post("/compute_indicators")
-def compute_indicators_api(req: IndicatorRequest, x_api_key: str = Header(...)):
-    verify_api_key(x_api_key)
+@app.post("/compute_indicators", dependencies=[Depends(verify_api_key)])
+def compute_indicators_api(req: IndicatorRequest):
     try:
         live_df = fetch_ohlcv(
             req.symbol,
@@ -193,3 +200,24 @@ def compute_indicators_api(req: IndicatorRequest, x_api_key: str = Header(...)):
 @app.get("/ping")
 def ping():
     return {"status": "ok"}
+
+
+from datetime import datetime
+import subprocess
+
+
+@app.get("/version")
+def version():
+    try:
+        sha = (
+            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
+        )
+    except Exception:
+        sha = "unknown"
+    return {"version": datetime.utcnow().isoformat() + "Z", "commit": sha}
+
+
+@app.get("/ohlcv", dependencies=[Depends(verify_api_key)])
+def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
+    df = fetch_ohlcv(symbol, exchange, timeframe=resolution, limit=limit)
+    return df.tail(limit).to_dict(orient="records")
