@@ -82,6 +82,9 @@ class SummarySignalRequest(BaseModel):
 
 @app.post("/run_strategy", dependencies=[Depends(verify_api_key)])
 def run_strategy_api(req: StrategyRequest):
+    """
+    Run a strategy on live OHLCV (via CCXT) or a local CSV (if filepath is provided). Returns per-candle outputs based on the supplied strategy config.
+    """
     try:
         if req.symbol and req.exchange:
             live_df = fetch_ohlcv(
@@ -114,6 +117,9 @@ def run_strategy_api(req: StrategyRequest):
 
 @app.post("/summary_signal", dependencies=[Depends(verify_api_key)])
 def summary_signal(req: SummarySignalRequest):
+    """
+    Analyze multiple timeframes and indicators to produce short_term and long_term signal summaries with confidence scores and per-indicator details.
+    """
     try:
         results = {}
         for name, tf in req.resolutions.items():
@@ -144,7 +150,9 @@ def summary_signal(req: SummarySignalRequest):
 
 @app.get("/news", dependencies=[Depends(verify_api_key)])
 def get_news():
-    """Return recent news headlines from CryptoPanic."""
+    """
+    Fetch recent crypto headlines from CryptoPanic (up to 20). Each item includes source, title, url, published_at, and tags.
+    """
     try:
         return fetch_latest_news(20)
     except Exception as e:
@@ -153,6 +161,9 @@ def get_news():
 
 @app.post("/compute_indicators", dependencies=[Depends(verify_api_key)])
 def compute_indicators_api(req: IndicatorRequest):
+    """
+    Compute technical indicators (e.g., RSI, MACD, Bollinger) over live OHLCV for the requested symbol/exchange/timeframe. NaN values are serialized as null.
+    """
     try:
         live_df = fetch_ohlcv(
             req.symbol,
@@ -199,6 +210,9 @@ def compute_indicators_api(req: IndicatorRequest):
 # Health check endpoint
 @app.get("/ping")
 def ping():
+    """
+    Health check endpoint used by uptime monitors and Render health checks.
+    """
     return {"status": "ok"}
 
 
@@ -209,6 +223,9 @@ from fastapi.openapi.utils import get_openapi
 
 @app.get("/version")
 def version():
+    """
+    Return build metadata including a UTC timestamp and short git commit hash, if available.
+    """
     try:
         sha = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
@@ -220,6 +237,9 @@ def version():
 
 @app.get("/ohlcv", dependencies=[Depends(verify_api_key)])
 def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
+    """
+    Fetch recent OHLCV candles from the specified exchange via CCXT and return the latest rows as an array of records.
+    """
     df = fetch_ohlcv(symbol, exchange, timeframe=resolution, limit=limit)
     return df.tail(limit).to_dict(orient="records")
 
