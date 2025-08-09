@@ -204,6 +204,7 @@ def ping():
 
 from datetime import datetime
 import subprocess
+from fastapi.openapi.utils import get_openapi
 
 
 @app.get("/version")
@@ -221,3 +222,21 @@ def version():
 def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
     df = fetch_ohlcv(symbol, exchange, timeframe=resolution, limit=limit)
     return df.tail(limit).to_dict(orient="records")
+
+
+# Custom OpenAPI schema with public Render URL
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title="TA Learning API",
+        version="1.0.0",
+        description="Signals, indicators, OHLCV, and news endpoints for TA Learning.",
+        routes=app.routes,
+    )
+    # Add your public base URL so tools importing the spec know where to send requests
+    schema["servers"] = [{"url": "https://ta-learning.onrender.com"}]
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
