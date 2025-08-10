@@ -38,13 +38,16 @@ def test_run_strategy_route(tmp_path):
     resp = client.post("/run_strategy", json=payload, headers={"x-api-key": "test"})
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) >= 3
-    for row in data[-3:]:
+    rows = data["rows"]
+    assert len(rows) >= 3
+    for row in rows[-3:]:
         assert {
+            "Date",
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Volume",
             "Signal",
-            "Price",
-            "EMA_short",
-            "EMA_long",
-            "Crossover",
         }.issubset(row.keys())
         assert row["Signal"] in {"long", "short", "neutral"}
