@@ -20,7 +20,10 @@ from .models import (
     ComputeIndicatorsResponse,
     RunStrategyRequest,
     RunStrategyResponse,
+    StrategyRow,
     OhlcvResponse,
+    OhlcvRow,
+    NewsResponse,
     PresetInfo,
     PresetDetail,
     PresetExecuteRequest,
@@ -199,18 +202,31 @@ def summary_signal(req: SummarySignalRequest):
                 results[name] = timeframe_summary(df, req.indicators, debug=debug)
         return replace_nans(results)
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
-@app.get("/news", dependencies=[Depends(verify_api_key)])
+@app.get(
+    "/news",
+    response_model=NewsResponse,
+    dependencies=[Depends(verify_api_key)],
+)
 def get_news():
-    """
-    Fetch recent crypto headlines from CryptoPanic (up to 20). Each item includes source, title, url, published_at, and tags.
-    """
+    """Fetch recent crypto headlines from CryptoPanic."""
     try:
-        return fetch_latest_news(20)
+        news_list = fetch_latest_news(20)
+        items = [
+            {
+                "source": i["source"],
+                "title": i["title"],
+                "url": i["url"],
+                "published_at": i["published_at"],
+                "tags": i.get("tags", []),
+            }
+            for i in news_list
+        ]
+        return {"items": items}
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 @app.post(
@@ -239,7 +255,7 @@ def compute_indicators_api(req: ComputeIndicatorsRequest):
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 # Preset routes
@@ -363,7 +379,7 @@ def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
         rows = replace_nans(rows)
         return {"rows": rows}
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 
