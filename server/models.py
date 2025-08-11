@@ -5,6 +5,29 @@ from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field
 
+
+class PresetInfo(BaseModel):
+    name: str
+    description: str
+    method: Literal["GET", "POST"]
+    path: str
+
+
+class PresetDetail(PresetInfo):
+    default_body: Optional[Dict[str, Any]] = None
+    default_params: Optional[Dict[str, Any]] = None
+
+
+class PresetExecuteRequest(BaseModel):
+    name: str = Field(description="Preset name, e.g., 'summary_default_btc_1h_4h'")
+    overrides_body: Optional[Dict[str, Any]] = Field(
+        default=None, description="Partial overrides merged into default body"
+    )
+    overrides_params: Optional[Dict[str, Any]] = Field(
+        default=None, description="Partial overrides merged into default params"
+    )
+
+
 SignalSide = Literal["long", "short", "neutral"]
 
 
