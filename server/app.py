@@ -106,6 +106,92 @@ def normalize_prices_df(df: pd.DataFrame, context: str = "") -> pd.DataFrame:
         logger.error(f"[normalize] context={context} failed: {e}")
         raise
 
+# --- Helper: Normalize exchange id & symbol fallbacks ---
+EXCHANGE_ALIASES = {
+    # case-insensitive map to ccxt ids you support
+    "binance": "binanceus",  # prefer binanceus for US access
+    "binanceus": "binanceus",
+    "coinbase": "coinbase",
+    "kraken": "kraken",
+}
+
+def normalize_exchange_id(exchange: str) -> str:
+    """Return a ccxt-compatible exchange id from a user/gpt-provided name."""
+    if not exchange:
+        return exchange
+    key = str(exchange).strip().lower()
+    return EXCHANGE_ALIASES.get(key, key)
+
+
+def _kraken_symbol_fallbacks(symbol: str) -> list[str]:
+    """Return possible Kraken-compatible symbol fallbacks for BTC/ETH/SOL.
+    Order matters: try original first; then common alternates.
+    """
+    out = []
+    base, quote = None, None
+    if isinstance(symbol, str) and "/" in symbol:
+        base, quote = symbol.split("/", 1)
+    # Always try the original first
+    out.append(symbol)
+    if not base or not quote:
+        return out
+
+    # USDC -> USD fallback (Kraken often prefers USD over USDC)
+    if quote.upper() == "USDC":
+        out.append(f"{base}/USD")
+
+    # Kraken uses XBT for BTC on many endpoints
+    if base.upper() in ("BTC", "XBT"):
+        alt_base = "XBT"
+        out.append(f"{alt_base}/{quote}")
+        if quote.upper() == "USDC":
+            out.append(f"{alt_base}/USD")
+
+    # ETH and SOL typically fine as-is; still add USD fallback if USDC
+    if base.upper() in ("ETH", "SOL") and quote.upper() == "USDC":
+        out.append(f"{base}/USD")
+
+    # Remove duplicates while preserving order
+    seen = set()
+    deduped = []
+    for s in out:
+        if s not in seen:
+            deduped.append(s)
+            seen.add(s)
+    return deduped
+
+
+def fetch_ohlcv_with_fallback(symbol: str, exchange: str, timeframe: str = "1h", limit: int = 200, strict: bool = True):
+    """Fetch OHLCV with normalization and Kraken fallbacks for BTC/ETH/SOL.
+
+    - Normalizes `exchange` id to ccxt expected lower-case ids.
+    - For Kraken, tries symbol fallbacks: USDC->USD, BTC->XBT, etc.
+    - Returns the first successful DataFrame; raises last error if all fail.
+    """
+    ex = normalize_exchange_id(exchange)
+
+    # For exchanges other than Kraken, just try once with normalized id
+    if ex != "kraken":
+        if debug:
+            logger.debug(f"[fetch_ohlcv_with_fallback] exchange={ex} symbol={symbol} tf={timeframe} limit={limit} strict={strict}")
+        return fetch_ohlcv(symbol, ex, timeframe=timeframe, limit=limit, strict=strict)
+
+    # Kraken: try ordered fallbacks for selected bases
+    candidates = _kraken_symbol_fallbacks(symbol)
+    last_err = None
+    for cand in candidates:
+        try:
+            if debug:
+                logger.debug(f"[fetch_ohlcv_with_fallback] try kraken cand={cand} tf={timeframe} limit={limit} strict={strict}")
+            return fetch_ohlcv(cand, ex, timeframe=timeframe, limit=limit, strict=strict)
+        except Exception as e:
+            last_err = e
+            if debug:
+                logger.debug(f"[fetch_ohlcv_with_fallback] fail cand={cand}: {e}")
+            continue
+    # If all attempts failed, raise the last error
+    raise last_err if last_err else RuntimeError("Unknown fetch error")
+
 def _read_env_var(key: str) -> str | None:
     """Read a single variable from the local .env file."""
     if os.path.exists(_ENV_FILE):
@@ -157,7 +243,7 @@ def run_strategy_api(req: RunStrategyRequest):
     """Run a strategy and return per-candle outputs."""
     try:
         if req.symbol and req.exchange:
-            live_df = fetch_ohlcv(
+            live_df = fetch_ohlcv_with_fallback(
                 req.symbol,
                 req.exchange,
                 timeframe=req.resolution or "1h",
@@ -192,7 +278,7 @@ def summary_signal(req: SummarySignalRequest):
         for name in ("short_term", "long_term"):
             tf = req.resolutions.get(name)
             if tf:
-                live_df = fetch_ohlcv(
+                live_df = fetch_ohlcv_with_fallback(
                     req.symbol,
                     req.exchange,
                     timeframe=tf,
@@ -237,7 +323,7 @@ def get_news():
 def compute_indicators_api(req: ComputeIndicatorsRequest):
     """Compute technical indicators over live OHLCV data."""
     try:
-        live_df = fetch_ohlcv(
+        live_df = fetch_ohlcv_with_fallback(
             req.symbol,
             req.exchange,
             timeframe=req.resolution or "1h",
@@ -310,7 +396,7 @@ def execute_preset(req: PresetExecuteRequest):
 
     try:
         if p.method == "GET" and p.path == "/ohlcv":
-            df = fetch_ohlcv(
+            df = fetch_ohlcv_with_fallback(
                 params.get("symbol", "BTC/USDT"),
                 params.get("exchange", "binanceus"),
                 timeframe=params.get("resolution", "1h"),
@@ -373,7 +459,7 @@ def version():
 def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
     """Fetch recent OHLCV candles from the specified exchange via CCXT."""
     try:
-        raw = fetch_ohlcv(symbol, exchange, timeframe=resolution, limit=limit, strict=False)
+        raw = fetch_ohlcv_with_fallback(symbol, exchange, timeframe=resolution, limit=limit, strict=False)
         df = normalize_prices_df(raw, context="ohlcv")
         rows = df.tail(limit).reset_index().to_dict(orient="records")
         rows = replace_nans(rows)
