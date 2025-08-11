@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Depends, Security, HTTPException, status
 from fastapi.security.api_key import APIKeyHeader
+from fastapi.responses import JSONResponse
+from typing import List
 import os
 from core.news import fetch_latest_news
 from ta_engine.data import load_price_data
@@ -10,6 +12,7 @@ from core.signals import timeframe_summary
 import numpy as np
 import pandas as pd
 from loguru import logger
+from .presets import PRESETS, Preset
 from .models import (
     SummarySignalRequest,
     SummarySignalResponse,
@@ -18,6 +21,9 @@ from .models import (
     RunStrategyRequest,
     RunStrategyResponse,
     OhlcvResponse,
+    PresetInfo,
+    PresetDetail,
+    PresetExecuteRequest,
 )
 
 _ENV_FILE = ".env"
@@ -234,6 +240,85 @@ def compute_indicators_api(req: ComputeIndicatorsRequest):
 
     except Exception as e:
         return {"error": str(e)}
+
+
+# Preset routes
+@app.get("/presets", response_model=List[PresetInfo], dependencies=[Depends(verify_api_key)])
+def list_presets():
+    """List available presets with brief descriptions and target endpoints."""
+    return [
+        PresetInfo(name=p.name, description=p.description, method=p.method, path=p.path)
+        for p in PRESETS.values()
+    ]
+
+
+@app.get(
+    "/presets/{name}",
+    response_model=PresetDetail,
+    dependencies=[Depends(verify_api_key)],
+)
+def get_preset(name: str):
+    """Return details for a specific preset, including default payload/params."""
+    p = PRESETS.get(name)
+    if not p:
+        return JSONResponse(status_code=404, content={"error": f"Preset '{name}' not found"})
+    return PresetDetail(
+        name=p.name,
+        description=p.description,
+        method=p.method,
+        path=p.path,
+        default_body=p.default_body,
+        default_params=p.default_params,
+    )
+
+
+@app.post("/presets/execute", dependencies=[Depends(verify_api_key)])
+def execute_preset(req: PresetExecuteRequest):
+    """Execute a preset by name. Overrides (if provided) are merged into default body/params."""
+    p = PRESETS.get(req.name)
+    if not p:
+        return JSONResponse(status_code=404, content={"error": f"Preset '{req.name}' not found"})
+
+    body = {**(p.default_body or {})}
+    params = {**(p.default_params or {})}
+    if req.overrides_body:
+        body.update(req.overrides_body)
+    if req.overrides_params:
+        params.update(req.overrides_params)
+
+    if p.execute_fn:
+        try:
+            return p.execute_fn({"body": body, "params": params})
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+
+    try:
+        if p.method == "GET" and p.path == "/ohlcv":
+            df = fetch_ohlcv(
+                params.get("symbol", "BTC/USDT"),
+                params.get("exchange", "binanceus"),
+                timeframe=params.get("resolution", "1h"),
+                limit=int(params.get("limit", 200)),
+                strict=False,
+            )
+            norm = normalize_prices_df(df, context=f"preset:{p.name}")
+            return norm.tail(int(params.get("limit", 200))).to_dict(orient="records")
+
+        if p.method == "GET" and p.path == "/news":
+            return get_news()
+
+        if p.method == "POST" and p.path == "/summary_signal":
+            return summary_signal(SummarySignalRequest(**body))
+
+        if p.method == "POST" and p.path == "/compute_indicators":
+            return compute_indicators_api(ComputeIndicatorsRequest(**body))
+
+        if p.method == "POST" and p.path == "/run_strategy":
+            return run_strategy_api(RunStrategyRequest(**body))
+
+        return JSONResponse(status_code=400, content={"error": f"Unsupported preset path: {p.path}"})
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 # Health check endpoint
