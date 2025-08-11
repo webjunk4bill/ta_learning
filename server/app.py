@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Depends, Security, HTTPException, status
 from fastapi.security.api_key import APIKeyHeader
-from pydantic import BaseModel
 import os
 from core.news import fetch_latest_news
 from ta_engine.data import load_price_data
@@ -11,6 +10,15 @@ from core.signals import timeframe_summary
 import numpy as np
 import pandas as pd
 from loguru import logger
+from .models import (
+    SummarySignalRequest,
+    SummarySignalResponse,
+    ComputeIndicatorsRequest,
+    ComputeIndicatorsResponse,
+    RunStrategyRequest,
+    RunStrategyResponse,
+    OhlcvResponse,
+)
 
 _ENV_FILE = ".env"
 
@@ -117,37 +125,26 @@ def verify_api_key(x_api_key: str = Security(api_key_header)):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized"
         )
 
-        
+
 app = FastAPI()
 
 
-class StrategyRequest(BaseModel):
-    filepath: str | None = None
-    config: dict
-    symbol: str | None = None
-    exchange: str | None = None
-    resolution: str | None = "1h"
-    limit: int | None = 200
+def replace_nans(obj):
+    if isinstance(obj, dict):
+        return {k: replace_nans(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [replace_nans(v) for v in obj]
+    if isinstance(obj, (float, np.floating)) and np.isnan(obj):
+        return None
+    return obj
 
 
-class IndicatorRequest(BaseModel):
-    symbol: str
-    exchange: str
-    resolution: str = "1h"
-    indicators: dict
-    limit: int | None = 200
-
-
-class SummarySignalRequest(BaseModel):
-    symbol: str
-    exchange: str
-    resolutions: dict
-    indicators: dict
-    limit: int | None = 200
-
-
-@app.post("/run_strategy", dependencies=[Depends(verify_api_key)])
-def run_strategy_api(req: StrategyRequest):
+@app.post(
+    "/run_strategy",
+    dependencies=[Depends(verify_api_key)],
+    response_model=RunStrategyResponse,
+)
+def run_strategy_api(req: RunStrategyRequest):
     """Run a strategy and return per-candle outputs."""
     try:
         if req.symbol and req.exchange:
@@ -155,7 +152,7 @@ def run_strategy_api(req: StrategyRequest):
                 req.symbol,
                 req.exchange,
                 timeframe=req.resolution or "1h",
-                limit=req.limit or 200,
+                limit=req.limit or 500,
             )
             df = normalize_prices_df(live_df, context="run_strategy")
         else:
@@ -163,7 +160,10 @@ def run_strategy_api(req: StrategyRequest):
 
         strat = get_strategy(req.config.get("strategy"))
         result_df = strat.run(df, req.config)
-        return result_df.reset_index().to_dict(orient="records")
+        merged = df.join(result_df, how="left").drop(columns=["Price"], errors="ignore")
+        rows = merged.reset_index().to_dict(orient="records")
+        rows = replace_nans(rows)
+        return {"rows": rows}
 
     except Exception as e:
         from fastapi.responses import JSONResponse
@@ -171,24 +171,27 @@ def run_strategy_api(req: StrategyRequest):
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 
-@app.post("/summary_signal", dependencies=[Depends(verify_api_key)])
+@app.post(
+    "/summary_signal",
+    dependencies=[Depends(verify_api_key)],
+    response_model=SummarySignalResponse,
+)
 def summary_signal(req: SummarySignalRequest):
-    """
-    Analyze multiple timeframes and indicators to produce short_term and long_term signal summaries with confidence scores and per-indicator details.
-    """
+    """Analyze multiple timeframes to produce short and long term signal summaries."""
     try:
         results = {}
-        for name, tf in req.resolutions.items():
-            live_df = fetch_ohlcv(
-                req.symbol,
-                req.exchange,
-                timeframe=tf,
-                limit=req.limit or 200,
-            )
-            df = normalize_prices_df(live_df, context=f"summary_signal:{name}")
-            results[name] = timeframe_summary(df, req.indicators, debug=debug)
-
-        return results
+        for name in ("short_term", "long_term"):
+            tf = req.resolutions.get(name)
+            if tf:
+                live_df = fetch_ohlcv(
+                    req.symbol,
+                    req.exchange,
+                    timeframe=tf,
+                    limit=req.limit or 200,
+                )
+                df = normalize_prices_df(live_df, context=f"summary_signal:{name}")
+                results[name] = timeframe_summary(df, req.indicators, debug=debug)
+        return replace_nans(results)
     except Exception as e:
         return {"error": str(e)}
 
@@ -204,11 +207,13 @@ def get_news():
         return {"error": str(e)}
 
 
-@app.post("/compute_indicators", dependencies=[Depends(verify_api_key)])
-def compute_indicators_api(req: IndicatorRequest):
-    """
-    Compute technical indicators (e.g., RSI, MACD, Bollinger) over live OHLCV for the requested symbol/exchange/timeframe. NaN values are serialized as null.
-    """
+@app.post(
+    "/compute_indicators",
+    dependencies=[Depends(verify_api_key)],
+    response_model=ComputeIndicatorsResponse,
+)
+def compute_indicators_api(req: ComputeIndicatorsRequest):
+    """Compute technical indicators over live OHLCV data."""
     try:
         live_df = fetch_ohlcv(
             req.symbol,
@@ -219,16 +224,6 @@ def compute_indicators_api(req: IndicatorRequest):
         df = normalize_prices_df(live_df, context="compute_indicators")
 
         indicators = compute_indicators(df, req.indicators)
-        
-        def replace_nans(obj):
-            if isinstance(obj, dict):
-                return {k: replace_nans(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [replace_nans(v) for v in obj]
-            elif isinstance(obj, float) and np.isnan(obj):
-                return None
-            return obj
-
         safe_indicators = replace_nans(indicators)
 
         return {
@@ -269,16 +264,19 @@ def version():
     return {"version": datetime.utcnow().isoformat() + "Z", "commit": sha}
 
 
-@app.get("/ohlcv", dependencies=[Depends(verify_api_key)])
+@app.get(
+    "/ohlcv",
+    dependencies=[Depends(verify_api_key)],
+    response_model=OhlcvResponse,
+)
 def ohlcv(symbol: str, exchange: str, resolution: str = "1h", limit: int = 200):
-    """
-    Fetch recent OHLCV candles from the specified exchange via CCXT and return the latest rows as an array of records.
-    """
+    """Fetch recent OHLCV candles from the specified exchange via CCXT."""
     try:
-        # Pass strict=False to fetch_ohlcv for this endpoint
         raw = fetch_ohlcv(symbol, exchange, timeframe=resolution, limit=limit, strict=False)
         df = normalize_prices_df(raw, context="ohlcv")
-        return df.tail(limit).to_dict(orient="records")
+        rows = df.tail(limit).reset_index().to_dict(orient="records")
+        rows = replace_nans(rows)
+        return {"rows": rows}
     except Exception as e:
         return {"error": str(e)}
 
