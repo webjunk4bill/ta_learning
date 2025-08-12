@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+ccxt
+pandas
+pandas_ta
+python-dateutil
+numpy<2

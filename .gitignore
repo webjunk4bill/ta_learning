@@ -6,4 +6,6 @@ server/__pycache__
 ta_engine/__pycache__
 core/indicators/__pycache__
 .env
-logs/
+logs
+.venv/
+__pycache__/

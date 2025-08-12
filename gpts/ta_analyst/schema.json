@@ -1,0 +1,21 @@
+{
+  "type":"object",
+  "required":["as_of","asset","exchange","timeframes","market_state","indicators","sentiment","outlook"],
+  "properties":{
+    "as_of":{"type":"string"},
+    "asset":{"type":"string"},
+    "exchange":{"type":"string"},
+    "timeframes":{"type":"array","items":{"type":"string"}},
+    "market_state":{
+      "type":"object",
+      "properties":{
+        "trend":{"type":"object"},
+        "volatility_regime":{"type":"object"},
+        "structure":{"type":"object"}
+      }
+    },
+    "indicators":{"type":"object"},
+    "sentiment":{"type":"object"},
+    "outlook":{"type":"object"}
+  }
+}
