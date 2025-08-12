@@ -1,0 +1,3 @@
+[
+  {"name":"TA Data Proxy","type":"openapi","url":"http://localhost:8001/openapi.json","auth":"none"}
+]
